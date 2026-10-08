@@ -1,0 +1,80 @@
+@import 'overrides/scrollbar.less';
+@import './variables.less';
+@import './themes/dark.less';
+@import './themes/light.less';
+
+:root {
+    --text-main: #434343;
+    --text-secondary: #7b7b7b;
+    --text-muted: #b0b0b0;
+
+    --page-content-max-width: 1440px;
+    --page-content-side-gap: 28px;
+
+    --background-black: #00000;
+    --background-white: #ffffff;
+
+    // 边框与分割线
+    --border-color: #e0e0e0;
+    --border-radius-sm: 8px;
+    --border-radius-md: 16px;
+    --border-radius-lg: 24px;
+    --border-radius-xl: 32px;
+
+    /* --- 📐 Typography --- */
+    --font-family-heading: 'Hiragino Sans GB', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-family-body: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-family-code: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body, #app {
+    .container()
+}
+
+html {
+    font-size: 16px; /* 1rem = 16px */
+    scroll-behavior: smooth; /* 锚点跳转平滑滚动 */
+    /* 这里不需要 overflow，交给 body 管理通常更安全 */
+}
+
+body {
+    /* 字体与颜色继承源头 */
+    font-family: var(--font-family-body), serif;
+    background-color: var(--theme-bg);
+    color: var(--text-main);
+    line-height: 1.75;
+
+    /* 字体平滑渲染 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+    position: relative;
+}
+
+input,select,textarea { border:1px solid var(--surface-border); border-radius:10px; padding:9px 12px; background:var(--surface-bg); color:var(--surface-title); font:inherit; min-width:0; }
+button { border:1px solid var(--tag-border); border-radius:999px; padding:6px 14px; background:var(--tag-bg); color:var(--tag-text); font:inherit; cursor:pointer; }
+button:disabled { opacity:.45; cursor:not-allowed; }
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible { outline:2px solid var(--md-link); outline-offset:3px; }
+.pagination { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:12px; margin-top:20px; color:var(--surface-text); }
+.category-filter { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:18px; color:var(--surface-text); }
+
+@media (max-width: 1024px) {
+    :root {
+        --page-content-side-gap: 20px;
+    }
+}
+
+@media (max-width: 640px) {
+    :root {
+        --page-content-side-gap: 14px;
+    }
+}
+

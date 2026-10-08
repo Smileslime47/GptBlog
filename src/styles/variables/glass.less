@@ -1,0 +1,66 @@
+.glass-shell {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: var(--glass-radius, 0);
+    background: rgba(var(--glass-bg-start-rgb), var(--glass-bg-start-alpha));
+    backdrop-filter: blur(18px) saturate(calc(var(--glass-saturate-start) * 1%));
+    -webkit-backdrop-filter: blur(18px) saturate(calc(var(--glass-saturate-start) * 1%));
+}
+
+.glass-shell::before {
+    content: none;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+        180deg,
+        rgba(var(--glass-highlight-start-rgb), var(--glass-highlight-start-alpha)) 0%,
+        rgba(var(--glass-highlight-mid-rgb), var(--glass-highlight-mid-alpha)) 35%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    opacity: var(--glass-highlight-opacity);
+}
+
+.glass-shell--top {
+    position: fixed;
+    top: calc(12px * var(--header-progress, 0));
+    left: 50%;
+    transform: translateX(-50%);
+    --capsule-target-width: min(var(--page-content-max-width, 1440px), calc(100% - var(--page-content-side-gap, 28px)));
+    width: calc(100% + (var(--capsule-target-width) - 100%) * var(--header-progress, 0));
+    z-index: 1000;
+    --glass-angle: 180deg;
+    --glass-radius: calc(2px + 26px * var(--header-progress, 0));
+    background: linear-gradient(
+        var(--glass-angle, 180deg),
+        rgba(var(--glass-bg-start-rgb), calc(var(--glass-bg-start-alpha) * var(--header-glass-opacity))) 0%,
+        rgba(var(--glass-bg-end-rgb), calc(var(--glass-bg-end-alpha) * var(--header-glass-opacity))) 100%
+    );
+    border: 1px solid rgba(var(--glass-border-rgb), calc(0.14 + 0.12 * var(--header-progress, 0)));
+    border-top-color: rgba(var(--glass-top-border-rgb), calc(0.2 + 0.32 * var(--header-progress, 0)));
+    backdrop-filter: blur(calc(14px + 8px * var(--header-progress, 0)))
+        saturate(calc((var(--glass-saturate-start) + var(--glass-saturate-boost) * var(--header-progress, 0)) * 1%));
+    -webkit-backdrop-filter: blur(calc(14px + 8px * var(--header-progress, 0)))
+        saturate(calc((var(--glass-saturate-start) + var(--glass-saturate-boost) * var(--header-progress, 0)) * 1%));
+    box-shadow: 0 calc(4px + 10px * var(--header-progress, 0))
+        calc(14px + 18px * var(--header-progress, 0))
+        rgba(var(--glass-shadow-rgb), calc(0.08 + 0.1 * var(--header-progress, 0)));
+    transition: top 260ms ease, width 260ms ease, border-radius 260ms ease,
+        box-shadow 260ms ease, border-color 260ms ease,
+        backdrop-filter 260ms ease, -webkit-backdrop-filter 260ms ease;
+}
+
+.glass-shell--top::before,
+.glass-shell--bottom::before {
+    content: none;
+}
+
+.glass-shell--bottom {
+    text-align: center;
+    padding: 2rem 0;
+    --glass-angle: 0deg;
+    border-top: 1px solid rgba(var(--glass-border-rgb), 0.2);
+    box-shadow: 0 -8px 22px rgba(var(--glass-shadow-rgb), 0.1);
+}

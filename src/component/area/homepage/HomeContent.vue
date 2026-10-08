@@ -1,0 +1,544 @@
+<template>
+  <div class="home-content">
+    <aside class="sidebar">
+      <div class="sidebar-stack">
+        <GlassCard class="personal-info">
+          <img src="https://avatars.githubusercontent.com/u/77948910" alt="Smile_slime_47 Avatar" class="avatar">
+          <h2>Smile_slime_47</h2>
+          <p class="alias">a.k.a. 邦邦</p>
+          <p class="intro">记录代码、游戏、音乐和一些生活里的碎片化知识。</p>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <strong>{{ totalTagsLabel }}</strong>
+              <span>Tags</span>
+            </div>
+            <div class="summary-item">
+              <strong>{{ totalCategories }}</strong>
+              <span>Categories</span>
+            </div>
+            <div class="summary-item">
+              <strong>{{ totalPosts }}</strong>
+              <span>Posts</span>
+            </div>
+          </div>
+        </GlassCard>
+
+        <GlassCard class="contact-card">
+          <h3>47Saikyo</h3>
+          <p>希望对你有所帮助。</p>
+          <p>如果想了解更多关于我的事情，你也可以看看 About 页面。</p>
+          <p>想要联系我的话，请尽量使用两个 Gmail 邮箱。</p>
+          <p>Outlook 邮箱主要被我用来接收网站推送。</p>
+
+          <div class="contact-handles">
+            <p v-for="handle in contactHandles" :key="handle.label">
+              <Icon :icon="handle.icon" />
+              <span>{{ handle.label }}</span>
+              <strong>{{ handle.value }}</strong>
+            </p>
+          </div>
+
+          <div class="contact-links">
+            <a
+              v-for="link in contactLinks"
+              :key="link.label"
+              :href="link.href"
+              :target="link.external ? '_blank' : undefined"
+              :rel="link.external ? 'noreferrer' : undefined"
+            >
+              <Icon :icon="link.icon" />
+              {{ link.label }}
+            </a>
+          </div>
+        </GlassCard>
+      </div>
+    </aside>
+
+    <main ref="postListRef" class="main-content">
+      <div v-if="loadError" class="state-card"><GlassCard>{{ loadError }} <button @click="loadPage(currentPage)">重试</button></GlassCard></div>
+      <div v-else-if="loading" class="state-card">
+        <GlassCard>正在加载文章列表...</GlassCard>
+      </div>
+
+      <div v-else-if="pagedPosts.length > 0" class="post-list">
+        <GlassCard
+          v-for="post in pagedPosts"
+          :key="post.id"
+          as="article"
+          class="post-card"
+        >
+          <div class="post-meta">
+            <span>{{ formatZhDate(post.publishedAt) }}</span>
+            <span>{{ post.categorySegments.join(' / ') || '未分类目录' }}</span>
+          </div>
+          <router-link :to="post.url" class="post-title">{{ post.title }}</router-link>
+          <p class="post-path">{{ post.filePath }}</p>
+        </GlassCard>
+      </div>
+
+      <div v-else class="state-card">
+        <GlassCard>当前还没有可展示的文章。</GlassCard>
+      </div>
+
+      <div v-if="totalPages > 1" class="pagination">
+        <button type="button" :disabled="loading || currentPage === 1" @click="goToPage(currentPage - 1)">
+          上一页
+        </button>
+        <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
+        <button type="button" :disabled="loading || currentPage === totalPages" @click="goToPage(currentPage + 1)">
+          下一页
+        </button>
+      </div>
+    </main>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { Icon } from '@iconify/vue/offline'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { postsService } from '@/service/posts'
+import type { CategoryNode, PostSummary } from '@/service/posts'
+import {
+  iconGithub,
+  iconGmail,
+  iconMicrosoft,
+  iconQq,
+  iconSteam,
+  iconTelegram,
+  iconWechat,
+} from '@/component/iconify/icons'
+import { formatZhDate } from '@/utils/date'
+
+const PAGE_SIZE = 10
+
+const loading = ref(false)
+const posts = ref<PostSummary[]>([])
+const currentPage = ref(1)
+const postListRef = ref<HTMLElement | null>(null)
+const stats = ref({ totalPosts: 0, totalTags: 0, totalCategories: 0 })
+const loadError = ref('')
+const totalTagsLabel = computed(() => String(stats.value.totalTags))
+
+const contactHandles = [
+  { label: 'QQ', value: 'Talloran47', icon: iconQq },
+  { label: 'WeChat', value: 'smile_slime_47', icon: iconWechat },
+  { label: 'Telegram', value: '@Smile_slime_47', icon: iconTelegram },
+]
+
+const contactLinks = [
+  { label: 'Outlook (Email)', href: 'mailto:smile_slime_47@outlook.com', icon: iconMicrosoft, external: false },
+  { label: 'Gmail (Email)', href: 'mailto:smiling.slime.47@gmail.com', icon: iconGmail, external: false },
+  { label: 'Business (Email)', href: 'mailto:lyb.compsci@gmail.com', icon: iconGmail, external: false },
+  { label: 'Steam', href: 'https://steamcommunity.com/id/47saikyo/', icon: iconSteam, external: true },
+  { label: 'Github', href: 'https://github.com/Smileslime47', icon: iconGithub, external: true },
+]
+
+const totalPosts = computed(() => stats.value.totalPosts)
+const totalCategories = computed(() => stats.value.totalCategories)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalPosts.value / PAGE_SIZE)))
+const pagedPosts = computed(() => posts.value)
+async function loadPage(page: number) {
+  loading.value = true; loadError.value = ''
+  try {
+    const [result, info] = await Promise.all([postsService.page(page), postsService.stats()])
+    posts.value = result.items; currentPage.value = result.page; stats.value = info
+  } catch (error) { loadError.value = error instanceof Error ? error.message : String(error) }
+  finally { loading.value = false }
+}
+onMounted(() => { void loadPage(Number(new URLSearchParams(location.search).get('page')) || 1) })
+
+async function goToPage(page: number) {
+  const nextPage = Math.min(Math.max(page, 1), totalPages.value)
+  if (nextPage === currentPage.value) return
+
+  await loadPage(nextPage)
+  const url = new URL(location.href)
+  url.searchParams.set('page', String(currentPage.value))
+  history.replaceState(history.state, '', url)
+  await nextTick()
+  scrollPostListIntoView()
+}
+
+function scrollPostListIntoView() {
+  const element = postListRef.value
+  if (!element) return
+
+  const targetTop = element.getBoundingClientRect().top + window.scrollY - 92
+  window.scrollTo({
+    top: Math.max(targetTop, 0),
+    behavior: 'smooth',
+  })
+}
+
+function countCategoryNodes(nodes: CategoryNode[]): number {
+  let total = 0
+  for (const node of nodes) {
+    total += 1
+    total += countCategoryNodes(node.children)
+  }
+  return total
+}
+</script>
+
+<style scoped lang="less">
+.home-content {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  width: min(var(--page-content-max-width, 1440px), calc(100% - var(--page-content-side-gap, 28px)));
+  margin: 0 auto;
+  padding: 0 0 32px;
+  align-items: start;
+}
+
+.sidebar {
+  position: sticky;
+  top: 84px;
+}
+
+.sidebar-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.personal-info {
+  padding: 22px 18px;
+  color: var(--surface-title);
+  text-align: center;
+}
+
+.avatar {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 14px;
+  border: 1px solid var(--surface-border);
+}
+
+.personal-info h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
+.personal-info p {
+  margin: 8px 0 0;
+  color: var(--surface-text);
+}
+
+.alias {
+  font-size: 0.88rem;
+  color: var(--surface-muted);
+}
+
+.intro {
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.summary-item strong {
+  color: var(--surface-title);
+  font-size: 1.7rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.summary-item span {
+  color: var(--surface-muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+}
+
+.contact-card {
+  padding: 18px 18px 20px;
+  text-align: center;
+  color: var(--surface-text);
+}
+
+.contact-card h3 {
+  margin: 0;
+  color: var(--surface-title);
+  font-size: 1.3rem;
+  font-weight: 500;
+}
+
+.contact-card > p {
+  margin: 8px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: var(--surface-text);
+}
+
+.contact-handles {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.contact-handles p {
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--surface-text);
+  font-size: 0.9rem;
+  align-items: center;
+}
+
+.contact-handles span {
+  color: var(--surface-muted);
+}
+
+.contact-handles strong {
+  font-weight: 500;
+  color: var(--surface-title);
+}
+
+.contact-links {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.contact-links a {
+  color: var(--surface-title);
+  font-size: 0.94rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.contact-links a:hover {
+  color: var(--md-link-hover);
+}
+
+.contact-handles :deep(svg),
+.contact-links :deep(svg) {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+  color: var(--surface-muted);
+}
+
+.main-content {
+  min-width: 0;
+}
+
+.post-card,
+.state-card :deep(.glass-card) {
+  margin-bottom: 10px;
+}
+
+.post-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.post-card {
+  padding: 14px 18px;
+}
+
+.post-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  color: var(--surface-muted);
+}
+
+.post-title {
+  display: inline-block;
+  color: var(--surface-title);
+  text-decoration: none;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.post-title:hover {
+  color: var(--md-link-hover);
+}
+
+.post-excerpt {
+  margin: 10px 0 0;
+  color: var(--surface-text);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.post-path {
+  margin: 8px 0 0;
+  color: var(--surface-text);
+  font-size: 0.86rem;
+  word-break: break-word;
+}
+
+.state-card {
+  color: var(--surface-text);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 0 0;
+}
+
+.pagination span {
+  color: var(--surface-text);
+  font-size: 0.9rem;
+}
+
+.pagination button {
+  border: 1px solid var(--tag-border);
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .home-content {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .sidebar {
+    position: static;
+  }
+
+  .sidebar-stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .post-card {
+    padding: 14px 16px;
+  }
+
+  .personal-info h2 {
+    font-size: 1.35rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-content {
+    gap: 10px;
+    padding-bottom: 24px;
+  }
+
+  .sidebar-stack {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .personal-info,
+  .contact-card {
+    padding: 16px 14px;
+  }
+
+  .avatar {
+    width: 78px;
+    height: 78px;
+    margin-bottom: 12px;
+  }
+
+  .personal-info h2 {
+    font-size: 1.2rem;
+  }
+
+  .alias,
+  .intro,
+  .contact-card > p,
+  .contact-handles p,
+  .contact-links a {
+    font-size: 0.84rem;
+  }
+
+  .summary-grid {
+    gap: 6px;
+    margin-top: 14px;
+  }
+
+  .summary-item strong {
+    font-size: 1.38rem;
+  }
+
+  .summary-item span {
+    font-size: 0.74rem;
+  }
+
+  .post-card {
+    padding: 12px 14px;
+  }
+
+  .post-meta {
+    gap: 6px 10px;
+    font-size: 0.75rem;
+    margin-bottom: 6px;
+  }
+
+  .post-title {
+    font-size: 0.98rem;
+    line-height: 1.4;
+  }
+
+  .post-excerpt {
+    margin-top: 8px;
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+
+  .post-path {
+    font-size: 0.8rem;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 4px;
+  }
+
+  .pagination span {
+    width: 100%;
+    text-align: center;
+    font-size: 0.84rem;
+  }
+
+  .pagination button {
+    min-width: 96px;
+    padding: 6px 12px;
+    font-size: 0.82rem;
+  }
+}
+</style>
