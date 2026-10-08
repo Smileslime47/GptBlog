@@ -13,12 +13,12 @@ const pending = ref(false), authenticating = ref(true), editing = ref(false), pr
 const originalId = ref(''), snapshot = ref(''), confirmDelete = ref('')
 const sync = ref<{configured:boolean; initialized:boolean} | null>(null)
 async function loadSync() { sync.value = await api('admin/sync') }
-async function synchronize(initialize = false) {
+async function synchronize() {
   if (pending.value || !discard()) return
-  if (!initialize && !window.confirm('将以 GitHub posts 分支为准更新文章和删除缓存中已移除的文章，确定继续吗？')) return
+  if (!window.confirm('将以 GitHub posts 分支为准更新文章和删除缓存中已移除的文章，确定继续吗？')) return
   pending.value = true; error.value = ''; notice.value = ''
   try {
-    const result = await api<{count:number; remaining:number}>('admin/sync/' + (initialize ? 'initialize':'pull'), {method:'POST'})
+    const result = await api<{count:number; remaining:number}>('admin/sync/pull', {method:'POST'})
     editing.value = false
     notice.value = result.remaining ? `已同步 ${result.count} 篇，还有 ${result.remaining} 篇，请继续点击从仓库同步。` : '文章已与 GitHub posts 分支同步。'
     await loadSync(); await load()
@@ -100,7 +100,7 @@ async function importMarkdown(event: Event) {
       <p v-if="authenticating">正在验证身份...</p>
       <div v-else-if="!session" class="login"><p>{{ error }}</p><a href="/signin-with-chatgpt?return_to=%2Fadmin" target="_top">使用 ChatGPT 登录</a></div>
       <template v-else>
-        <div class="message"><p v-if="!sync?.configured">文章同步尚未启用：请在站点设置配置 GITHUB_POSTS_TOKEN（GptBlog 仓库 Contents 读写权限），再迁移当前文章。现有文章仍可阅读。</p><p v-else>{{ sync.initialized ? '文章由 GitHub posts 分支管理；保存会先提交到仓库。' : '首次使用请迁移当前文章；已有文章仓库可恢复索引。' }}</p><div class="editor-actions"><button v-if="!sync?.initialized" :disabled="pending || !sync?.configured" @click="synchronize(true)">迁移当前文章到仓库</button><button :disabled="pending || !sync?.configured" @click="synchronize()">从仓库同步</button><a href="https://github.com/Smileslime47/GptBlog/tree/posts" target="_blank" rel="noopener noreferrer">查看文章仓库</a></div></div>
+        <div class="message"><p v-if="!sync?.configured">文章同步尚未启用：请在站点设置配置 GITHUB_POSTS_TOKEN（GptBlog 仓库 Contents 读写权限）。现有文章仍可阅读。</p><p v-else>{{ sync.initialized ? '文章由 GitHub posts 分支管理；保存会先提交到仓库。' : '请点击「从仓库同步」恢复已有文章仓库的索引。' }}</p><div class="editor-actions"><button :disabled="pending || !sync?.configured" @click="synchronize()">从仓库同步</button><a href="https://github.com/Smileslime47/GptBlog/tree/posts" target="_blank" rel="noopener noreferrer">查看文章仓库</a></div></div>
         <div class="toolbar"><button :disabled="pending" @click="create">新建文章</button><label class="import">导入 Markdown<input type="file" accept=".md,.markdown" @change="importMarkdown"></label><form @submit.prevent="page=1; load()"><input v-model="query" placeholder="搜索文章" aria-label="搜索文章"><button :disabled="pending">搜索</button></form></div>
         <p v-if="error" class="message error" role="alert">{{ error }}</p><p v-if="notice" class="message" role="status">{{ notice }}</p>
         <div v-if="editing" class="editor">

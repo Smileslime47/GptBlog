@@ -10,7 +10,7 @@
 
 - 代码归档在 `main`，文章和配图在 `posts` 分支的 `posts/` 目录；不使用 GitHub Pages。
 - 在 Sites 运行时设置中添加秘密变量 `GITHUB_POSTS_TOKEN`：使用只允许 `GptBlog` 仓库的 fine-grained token，授予 Contents 读写权限；不要把凭据写入仓库。
-- 首次在 `/admin` 点击“迁移当前文章到仓库”，迁移生产数据库的当前正文、草稿和元数据，禁止覆盖已有仓库文章。
+- 首次迁移已完成，后台仅保留“从仓库同步”；需要恢复索引时，以已有文章仓库为准，不再重复迁移数据库文章。
 - 本地编辑 `posts/分类/文章.md` 并推送后，后台点击“从仓库同步”；每次最多处理 10 篇变更，提示有剩余时继续点击。全部同步完成后才删除仓库已移除的缓存文章。当前采用手动拉取，不依赖 webhook。
 - Markdown 使用 YAML frontmatter：`title`、`category`、`tags`、`date`、`status`（draft/published），其余元数据保留。数据库正文是可重建缓存。
 - 草稿也存入文章分支：公开仓库中的草稿可以被直接读取，网站只隐藏它在读者页面的展示。
