@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '../../chatgpt-auth';
-import { database, compactLegacyCache, summary, detail } from '../../../db/posts';
+import { database, summary, detail } from '../../../db/posts';
 import { extraFrontmatter } from '../../../db/post-format';
 import { syncStatus, pullPosts, withSyncLock, writePost, postAsset, SyncError } from '../../../db/github-posts';
 
@@ -45,7 +45,6 @@ async function handle(request: Request) {
     const actor = isAdmin ? await admin() : null;
     if (request.method !== 'GET') sameOrigin(request);
     if (path === 'post-asset' && request.method === 'GET') return await postAsset(url.searchParams.get('path') ?? '');
-    await compactLegacyCache();
     const db = database();
     if (path === 'admin/sync' && request.method === 'GET') return json(await syncStatus());
     if (path === 'admin/sync/pull' && request.method === 'POST') return json(await pullPosts());
