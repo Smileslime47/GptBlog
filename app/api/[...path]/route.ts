@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '../../chatgpt-auth';
 import { database, ensureImported, summary, detail } from '../../../db/posts';
+import { syncStatus, initializePosts, pullPosts, withSyncLock, writePost, postAsset, SyncError } from '../../../db/github-posts';
 
 class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -42,8 +43,12 @@ async function handle(request: Request) {
     const isAdmin = path.startsWith('admin/');
     const actor = isAdmin ? await admin() : null;
     if (request.method !== 'GET') sameOrigin(request);
+    if (path === 'post-asset' && request.method === 'GET') return await postAsset(url.searchParams.get('path') ?? '');
     await ensureImported();
     const db = database();
+    if (path === 'admin/sync' && request.method === 'GET') return json(await syncStatus());
+    if (path === 'admin/sync/initialize' && request.method === 'POST') return json(await initializePosts());
+    if (path === 'admin/sync/pull' && request.method === 'POST') return json(await pullPosts());
     if (path === 'admin/session') {
       return json({ email: actor!.email, name: actor!.displayName });
     }
@@ -98,34 +103,40 @@ async function handle(request: Request) {
       if (typeof title !== 'string' || !title.trim() || title.length>300 || typeof category !== 'string' || category.length>500 || typeof content !== 'string' || !content.trim() || !Array.isArray(tags) || tags.length>30 || tags.some((x:unknown)=>typeof x!=='string' || x.length>80)) throw new HttpError(400, '请检查标题、分类、标签和正文');
       if (!['draft','published'].includes(status)) throw new HttpError(400, '文章状态无效');
       if (publishedAt && (typeof publishedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(publishedAt) || Number.isNaN(Date.parse(publishedAt)))) throw new HttpError(400, '发布日期无效');
+      return await withSyncLock(async () => {
       const existing = await db.prepare('SELECT * FROM posts WHERE id=?').bind(id).first();
       if (request.method==='POST' && existing) throw new HttpError(409, '文章路径已存在');
       if (request.method==='PUT' && !existing) throw new HttpError(404, '文章不存在');
+      if (request.method==='PUT' && (!Number.isSafeInteger(version) || version !== existing!.version)) throw new HttpError(409, '文章已在其他窗口修改，请重新加载后再保存');
       const normalizedTags = [...new Set<string>(tags.map((x:string)=>x.trim()).filter(Boolean))];
       const fm = { ...(existing ? JSON.parse(String(existing.frontmatter)) : {}), title: title.trim(), tags: normalizedTags, date: publishedAt || '' };
       const excerpt = content.replace(/```[\s\S]*?```/g,' ').replace(/!\[[^\]]*\]\([^)]*\)/g,' ').replace(/[#*>`]/g,'').replace(/\s+/g,' ').trim().slice(0,120);
       const values = [title.trim(), category.trim(), JSON.stringify(normalizedTags), publishedAt || null, content, excerpt, JSON.stringify(fm),status,new Date().toISOString()];
+      let mutation: D1PreparedStatement;
       if (request.method === 'POST') {
-        await db.prepare('INSERT INTO posts (title,category,tags,published_at,content,excerpt,frontmatter,status,updated_at,id) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(...values,id).run();
+        mutation = db.prepare('INSERT INTO posts (title,category,tags,published_at,content,excerpt,frontmatter,status,updated_at,id) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(...values,id);
       } else {
-        if (!Number.isSafeInteger(version)) throw new HttpError(400, '版本参数无效');
-        const result = await db.prepare('UPDATE posts SET title=?,category=?,tags=?,published_at=?,content=?,excerpt=?,frontmatter=?,status=?,updated_at=?,version=version+1 WHERE id=? AND version=?').bind(...values,id,version).run();
-        if (!result.meta.changes) throw new HttpError(409, '文章已在其他窗口修改，请重新加载后再保存');
+        mutation = db.prepare('UPDATE posts SET title=?,category=?,tags=?,published_at=?,content=?,excerpt=?,frontmatter=?,status=?,updated_at=?,version=version+1 WHERE id=? AND version=?').bind(...values,id,version);
       }
+      await writePost({ id, title:title.trim(), category:category.trim(), tags:JSON.stringify(normalizedTags), published_at:publishedAt || null, content, frontmatter:JSON.stringify(fm), status }, false, mutation);
       const saved = await db.prepare('SELECT * FROM posts WHERE id=?').bind(id).first();
       return json(detail(saved!), request.method==='POST' ? 201 : 200);
+      });
     }
     if (path === 'admin/post' && request.method === 'DELETE') {
       const id = url.searchParams.get('id');
       const version = positive(url.searchParams.get('version'),0,1000000000);
       if (!id || !version) throw new HttpError(400, '缺少文章标识或版本');
-      const result = await db.prepare('DELETE FROM posts WHERE id=? AND version=?').bind(id,version).run();
-      if (!result.meta.changes) throw new HttpError(409,'文章已变更，请刷新列表');
-      return json({ deleted:true });
+      return await withSyncLock(async () => {
+        const row = await db.prepare('SELECT * FROM posts WHERE id=?').bind(id).first();
+        if (!row || row.version !== version) throw new HttpError(409,'文章已变更，请刷新列表');
+        await writePost(row, true, db.prepare('DELETE FROM posts WHERE id=? AND version=?').bind(id,version));
+        return json({ deleted:true });
+      });
     }
     return json({ error: '接口不存在' },404);
   } catch (error) {
-    if (error instanceof HttpError) return json({ error: error.message },error.status);
+    if (error instanceof HttpError || error instanceof SyncError) return json({ error: error.message },error.status);
     console.error('博客接口异常', error);
     return json({ error: '服务暂时不可用，请稍后重试' },503);
   }

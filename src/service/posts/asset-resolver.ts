@@ -19,7 +19,9 @@ export async function resolvePostAssetUrl(postId: string | undefined, rawUrl: st
   const resolvedVirtualPath = resolveRelativePath(postDir, pathPart)
   const assetUrl = await postAssetResource.load(resolvedVirtualPath)
 
-  return assetUrl ? `${assetUrl}${suffix}` : rawUrl
+  if (assetUrl) return `${assetUrl}${suffix}`
+  const path = resolvedVirtualPath.startsWith('/src/posts/') ? resolvedVirtualPath.slice('/src/posts/'.length) : ''
+  return path && /\.(png|jpe?g|gif|webp|avif)$/i.test(path) ? `/api/post-asset?path=${encodeURIComponent(path)}${suffix.startsWith('#') ? suffix : ''}` : rawUrl
 }
 
 export async function resolvePostAssetUrls(postId: string | undefined, rawUrls: string[]): Promise<Map<string, string>> {

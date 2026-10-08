@@ -11,6 +11,20 @@ const page = ref(1), pages = ref(1), total = ref(0)
 const query = ref(''), error = ref(''), notice = ref('')
 const pending = ref(false), authenticating = ref(true), editing = ref(false), preview = ref(false)
 const originalId = ref(''), snapshot = ref(''), confirmDelete = ref('')
+const sync = ref<{configured:boolean; initialized:boolean} | null>(null)
+async function loadSync() { sync.value = await api('admin/sync') }
+async function synchronize(initialize = false) {
+  if (pending.value || !discard()) return
+  if (!initialize && !window.confirm('将以 GitHub posts 分支为准更新文章和删除缓存中已移除的文章，确定继续吗？')) return
+  pending.value = true; error.value = ''; notice.value = ''
+  try {
+    const result = await api<{count:number; remaining:number}>('admin/sync/' + (initialize ? 'initialize':'pull'), {method:'POST'})
+    editing.value = false
+    notice.value = result.remaining ? `已同步 ${result.count} 篇，还有 ${result.remaining} 篇，请继续点击从仓库同步。` : '文章已与 GitHub posts 分支同步。'
+    await loadSync(); await load()
+  } catch(e) { error.value = (e as Error).message }
+  finally { pending.value = false }
+}
 const form = reactive({ id: '', title: '', category: '', tagsText: '', content: '', publishedAt: new Date().toISOString().slice(0,10), status: 'draft' as 'draft'|'published', version: 1 })
 const dirty = computed(() => editing.value && snapshot.value !== JSON.stringify(form))
 const canSave = computed(() => !!form.title.trim() && !!form.content.trim() && !!form.id.trim())
@@ -23,6 +37,7 @@ onMounted(async () => {
     const result = await api<PostPage & { session: { name: string; email: string } }>('admin/bootstrap')
     session.value = result.session; rows.value = result.items as typeof rows.value
     page.value = result.page; pages.value = result.totalPages; total.value = result.total
+    await loadSync()
   } catch(e) { error.value = (e as Error).message }
   finally { authenticating.value = false }
 })
@@ -55,7 +70,7 @@ async function save(status: 'draft'|'published') {
   pending.value = true; error.value = ''; notice.value = ''
   try {
     const saved = await api<ManagedPost>('admin/post', { method:originalId.value ? 'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ ...form,status,tags:form.tagsText.split(/[,，]/).map(x=>x.trim()).filter(Boolean) }) })
-    form.version = saved.version; form.status = saved.status; originalId.value = saved.id; snapshot.value = JSON.stringify(form); notice.value = status==='published' ? '已发布，读者页面已更新。':'草稿已保存。'; await load()
+    form.version = saved.version; form.status = saved.status; originalId.value = saved.id; snapshot.value = JSON.stringify(form); notice.value = status==='published' ? '已提交至 GitHub 并发布，读者页面已更新。':'草稿已提交至 GitHub。'; await load()
   } catch(e) { error.value = (e as Error).message }
   finally { pending.value = false }
 }
@@ -85,6 +100,7 @@ async function importMarkdown(event: Event) {
       <p v-if="authenticating">正在验证身份...</p>
       <div v-else-if="!session" class="login"><p>{{ error }}</p><a href="/signin-with-chatgpt?return_to=%2Fadmin" target="_top">使用 ChatGPT 登录</a></div>
       <template v-else>
+        <div class="message"><p v-if="!sync?.configured">文章同步尚未启用：请在站点设置配置 GITHUB_POSTS_TOKEN（GptBlog 仓库 Contents 读写权限），再迁移当前文章。现有文章仍可阅读。</p><p v-else>{{ sync.initialized ? '文章由 GitHub posts 分支管理；保存会先提交到仓库。' : '首次使用请迁移当前文章；已有文章仓库可恢复索引。' }}</p><div class="editor-actions"><button v-if="!sync?.initialized" :disabled="pending || !sync?.configured" @click="synchronize(true)">迁移当前文章到仓库</button><button :disabled="pending || !sync?.configured" @click="synchronize()">从仓库同步</button><a href="https://github.com/Smileslime47/GptBlog/tree/posts" target="_blank" rel="noopener noreferrer">查看文章仓库</a></div></div>
         <div class="toolbar"><button :disabled="pending" @click="create">新建文章</button><label class="import">导入 Markdown<input type="file" accept=".md,.markdown" @change="importMarkdown"></label><form @submit.prevent="page=1; load()"><input v-model="query" placeholder="搜索文章" aria-label="搜索文章"><button :disabled="pending">搜索</button></form></div>
         <p v-if="error" class="message error" role="alert">{{ error }}</p><p v-if="notice" class="message" role="status">{{ notice }}</p>
         <div v-if="editing" class="editor">
