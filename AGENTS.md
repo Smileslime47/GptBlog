@@ -84,41 +84,23 @@
 
 ### 3.2 文章系统
 
-文章系统核心位于 `src/service/posts/`：
+文章系统核心位于 `src/service/posts/` 和 `db/`：
 
-- `loaders.ts`：文章与文章资源的按需加载入口
-- `index-builder.ts`：文章摘要与分类树构建
-- `frontmatter-parser.ts`：frontmatter 解析
-- `repository.ts`：统一文章查询与缓存
-- `types.ts`：文章相关类型定义
-- `meta-manifest.generated.ts`：归档、标签、搜索等轻量元数据清单
+- `src/service/posts/index.ts`：统一分页与详情 API
+- `src/service/posts/index-builder.ts`：分类树构建
+- `src/service/posts/frontmatter-parser.ts`：后台 Markdown 导入
+- `src/service/posts/asset-resolver.ts`：文章仓库相对图片路径转换
+- `db/github-posts.ts`：仓库读写、增量同步与冲突检测
+- `db/post-format.ts`：文章编码与解码
 
-新增文章相关能力时，优先复用或扩展这一层，不要在页面里重复写一套解析逻辑。
-
-新增、删除、重命名文章，或修改文章 frontmatter 后，必须同步检查 `src/service/posts/meta-manifest.generated.ts`：
-
-- 优先运行 `node scripts/generate-post-meta-manifest.mjs` 更新清单
-- 提交前核对 diff，确认清单只包含本次文章相关的元数据变化
-- 如果生成脚本带出大量历史字段或排序变化，先收窄到本次必要条目，不要把无关清单刷新混进提交
-- 新文章必须确认清单中存在对应 `title` 与日期字段，否则 `/archive`、`/tags`、搜索等依赖元数据的页面可能不会按预期显示
+文章和附属资源只在 `posts` 分支的 `posts/` 目录维护，不在 `main` 保留内容快照或静态索引。D1 是正文与查询索引缓存，可通过“从仓库同步”恢复；不得重新加入 seed 导入或数据库反向迁移逻辑。
 
 ### 3.3 frontmatter 约定
 
-当前主要使用这些字段：
-
-- `title`
-- `date`
-- `publishedAt`
-- `publishDate`
-- `createdAt`
-- `tags`
-
-说明：
-
-- 分类主要由 `src/posts` 下的目录结构承担
-- `tags` 用于标签聚合
-- 日期字段用于归档和排序
-- 文章日期变更后，要同步核对 `meta-manifest.generated.ts` 中的 `publishedAt`
+- 使用 `title`、`category`、`tags`、`date`、`status`，日期兼容 `publishedAt`、`publishDate`、`createdAt`
+- 分类未明确填写时，由文章在仓库中的目录推导
+- D1 独立列保存查询字段，`frontmatter` 只存 `mathjax` 等额外属性；接口及仓库编码时重建标准元数据
+- 配图使用相对路径，通过同源接口从文章仓库读取，不随网站源码打包
 
 ### 3.4 组件自动注册
 
@@ -153,7 +135,7 @@
 ### 5.1 GitHub 归档同步（每次修改必须执行）
 
 - 文章权威来源为同仓库 `posts` 分支的 `posts/` 目录，`main` 归档网站源码；文章运行时变更必须先提交 GitHub，再更新 D1 缓存。
-- 不得用静态 seed 覆盖生产数据库中的后续编辑；首次迁移从生产数据库读取，恢复时以文章分支为准。
+- 不得用静态 seed 覆盖生产数据库中的后续编辑；首次迁移已完成，恢复时以文章分支为准。
 - 所有后台文章写操作和索引同步必须共用数据库同步锁，拒绝远端版本冲突，禁止自动强推。
 - `GITHUB_POSTS_TOKEN` 仅作为 Sites 运行时秘密配置，禁止写入源码、日志或浏览器。
 

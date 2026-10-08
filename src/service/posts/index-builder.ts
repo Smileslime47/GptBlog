@@ -1,25 +1,4 @@
 import type { CategoryNode, PostSummary } from './types'
-import type { PostLoaderMap } from './loaders'
-import { postMetaManifest } from './meta-manifest.generated'
-import { normalizeTags, toTimestamp } from './meta-utils'
-
-/**
- * 从 markdown loaders 构建文章摘要列表。
- * 这里不读取 markdown 正文，只依赖文件路径，速度更快。
- */
-export function buildPostSummaries(loaders: PostLoaderMap): PostSummary[] {
-  return Object.keys(loaders)
-    .map(toSummary)
-    .sort((a, b) => {
-      if (a.publishedAtTs != null && b.publishedAtTs != null) {
-        return b.publishedAtTs - a.publishedAtTs
-      }
-      if (a.publishedAtTs != null) return -1
-      if (b.publishedAtTs != null) return 1
-      return a.title.localeCompare(b.title, 'zh-Hans-CN')
-    })
-}
-
 /**
  * 由摘要列表构建树形分类结构。
  * 目录作为节点，文章挂到对应叶子（或中间）节点的 posts 字段。
@@ -50,40 +29,6 @@ export function buildCategoryTree(posts: PostSummary[]): CategoryNode[] {
   // 对节点和文章都做稳定排序，保证 UI 展示一致
   sortTree(root)
   return root.children
-}
-
-/**
- * 将文件路径转为摘要对象。
- * 示例：
- * /src/posts/Article/Web/hello.md
- * -> segments: ['Article', 'Web', 'hello']
- * -> url: /posts/Article/Web/hello
- */
-function toSummary(filePath: string): PostSummary {
-  const relativePath = filePath.replace('/src/posts/', '')
-  const withoutExt = relativePath.replace(/\.md$/i, '')
-  const segments = withoutExt.split('/')
-  const categorySegments = segments.slice(0, -1)
-  const fallbackTitle = segments[segments.length - 1] ?? relativePath
-  const url = `/posts/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`
-  const manifest = postMetaManifest[relativePath]
-  const fmTitle = manifest?.frontmatter?.title
-  const title = typeof fmTitle === 'string' && fmTitle.trim() !== '' ? fmTitle : fallbackTitle
-  const publishedAt = manifest?.publishedAt
-  const publishedAtTs = toTimestamp(publishedAt)
-  const tags = normalizeTags(manifest?.frontmatter?.tags)
-
-  return {
-    id: relativePath,
-    title,
-    url,
-    filePath: relativePath,
-    segments,
-    categorySegments,
-    publishedAt,
-    publishedAtTs,
-    tags,
-  }
 }
 
 /**

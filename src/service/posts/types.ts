@@ -19,7 +19,7 @@ export interface PostSummary {
   title: string
   /** 前端路由地址，例如 /posts/Article/Web/xxx */
   url: string
-  /** 相对路径（去掉 /src/posts/ 前缀，保留 .md） */
+  /** 相对于文章仓库 posts/ 目录的路径，保留 .md。 */
   filePath: string
   /** 路由段数组（不含 .md），例如 ['Article', 'Web', 'xxx'] */
   segments: string[]
@@ -40,8 +40,6 @@ export interface PostSummary {
 export interface PostEntry extends PostSummary {
   /** frontmatter 之后的 markdown 正文 */
   content: string
-  /** 原始 markdown 文本（包含 frontmatter） */
-  raw: string
   /** frontmatter 解析结果 */
   frontmatter: Record<string, FrontmatterValue>
 }
@@ -62,16 +60,6 @@ export interface PostMeta extends PostSummary {
 }
 
 /**
- * 文章轻量元信息对象。
- * 不包含摘要提取结果，用于首页/归档/标签等轻量场景。
- */
-export interface PostMetaLite extends PostSummary {
-  frontmatter: Record<string, FrontmatterValue>
-  publishedAt?: string
-  publishedAtTs: number | null
-}
-
-/**
  * 分类树节点。
  * 每个节点既可能有子分类，也可能直接挂文章（posts）。
  */
@@ -84,23 +72,4 @@ export interface CategoryNode {
   children: CategoryNode[]
   /** 直接属于该分类的文章（不包含子分类里的文章） */
   posts: PostSummary[]
-}
-
-/**
- * 对外统一的文章服务接口。
- * 页面层应尽量依赖该接口，而不是直接耦合具体实现类。
- */
-export interface PostsService {
-  /** 获取全部文章摘要（已排序）。 */
-  getAllPosts(): PostSummary[]
-  /** 获取全量文章轻量元信息（按发布日期倒序）。 */
-  loadAllPostMetaLite(): Promise<PostMetaLite[]>
-  /** 获取全量文章元信息（按发布日期倒序）。 */
-  loadAllPostMetas(): Promise<PostMeta[]>
-  /** 获取分类树（已排序）。 */
-  getCategoryTree(): CategoryNode[]
-  /** 通过路由 segments 查询摘要。 */
-  getPostSummaryBySegments(segments: string[]): PostSummary | undefined
-  /** 通过路由 segments 按需加载文章详情（含缓存）。 */
-  loadPostBySegments(segments: string[]): Promise<PostEntry | undefined>
 }

@@ -1,12 +1,3 @@
-import { postAssetLoaders } from './loaders'
-import { LazyResourceService } from './resource-loader'
-
-const postAssetResource = new LazyResourceService<string>(
-  Object.fromEntries(
-    Object.entries(postAssetLoaders).map(([virtualPath, loader]) => [normalizeVirtualPath(virtualPath), loader])
-  )
-)
-
 export async function resolvePostAssetUrl(postId: string | undefined, rawUrl: string): Promise<string> {
   const trimmed = rawUrl.trim()
   if (!postId || trimmed === '' || isExternalAssetUrl(trimmed)) {
@@ -15,12 +6,9 @@ export async function resolvePostAssetUrl(postId: string | undefined, rawUrl: st
 
   const unwrapped = unwrapMarkdownUrl(trimmed)
   const [pathPart, suffix = ''] = splitUrlSuffix(unwrapped)
-  const postDir = normalizeVirtualPath(`/src/posts/${postId}`).replace(/\/[^/]+$/, '')
+  const postDir = normalizeVirtualPath(`/posts/${postId}`).replace(/\/[^/]+$/, '')
   const resolvedVirtualPath = resolveRelativePath(postDir, pathPart)
-  const assetUrl = await postAssetResource.load(resolvedVirtualPath)
-
-  if (assetUrl) return `${assetUrl}${suffix}`
-  const path = resolvedVirtualPath.startsWith('/src/posts/') ? resolvedVirtualPath.slice('/src/posts/'.length) : ''
+  const path = resolvedVirtualPath.startsWith('/posts/') ? resolvedVirtualPath.slice('/posts/'.length) : ''
   return path && /\.(png|jpe?g|gif|webp|avif)$/i.test(path) ? `/api/post-asset?path=${encodeURIComponent(path)}${suffix.startsWith('#') ? suffix : ''}` : rawUrl
 }
 

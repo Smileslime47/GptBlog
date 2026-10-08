@@ -4,7 +4,7 @@ import type { PostEntry, PostSummary } from './types'
  * 对外统一导出的类型。
  * 页面层/组件层优先从这里引用，避免跨文件直接耦合内部实现。
  */
-export type { PostEntry, PostSummary, CategoryNode, PostsService, FrontmatterValue, PostMeta } from './types'
+export type { PostEntry, PostSummary, CategoryNode, FrontmatterValue, PostMeta } from './types'
 
 /**
  * 后端文章查询服务：列表分页查询，正文按需读取。

@@ -1,5 +1,11 @@
 import { parse, stringify } from 'yaml';
 
+export function extraFrontmatter(frontmatter: Record<string, unknown>) {
+  const extra = { ...frontmatter };
+  for (const key of ['title', 'category', 'tags', 'date', 'status', 'publishedAt', 'publishDate', 'createdAt']) delete extra[key];
+  return extra;
+}
+
 export function encodePost(row: Record<string, unknown>) {
   const metadata = { ...JSON.parse(String(row.frontmatter)), title: row.title, category: row.category, tags: JSON.parse(String(row.tags)), date: row.published_at || '', status: row.status };
   return '---\n' + stringify(metadata) + '---\n' + String(row.content);
@@ -22,5 +28,5 @@ export function decodePost(id: string, raw: string) {
   if (publishedAt && (!/^\d{4}-\d{2}-\d{2}$/.test(publishedAt) || Number.isNaN(Date.parse(publishedAt)))) throw new Error('文章日期无效：' + id);
   const content = match[2];
   const excerpt = content.replace(/```[\s\S]*?```/g, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/[#*>`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120);
-  return { id, title: fm.title.trim(), category, tags: JSON.stringify(tags), publishedAt: publishedAt || null, content, excerpt, frontmatter: JSON.stringify(fm), status };
+  return { id, title: fm.title.trim(), category, tags: JSON.stringify(tags), publishedAt: publishedAt || null, content, excerpt, frontmatter: JSON.stringify(extraFrontmatter(fm)), status };
 }

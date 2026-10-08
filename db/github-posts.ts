@@ -37,14 +37,15 @@ export async function postAsset(path: string) {
   if (!token()) throw new SyncError(503, '图片仓库尚未配置');
   const response = await fetch('https://api.github.com/repos/' + repository + '/contents/posts/' + path.split('/').map(encodeURIComponent).join('/') + '?ref=' + branch, { headers: { Authorization:'Bearer ' + token(), Accept:'application/vnd.github.raw+json', 'User-Agent':'47Saikyo' }, signal:AbortSignal.timeout(15000) });
   if (!response.ok) throw new SyncError(response.status === 404 ? 404 : 503, '图片暂时不可用');
-  // 流式限量读取，避免大图片耗尽 Worker 内存。
-  const reader = response.body?.getReader();
-  if (!reader) throw new SyncError(503, '图片暂时不可用');
-  const chunks: Uint8Array[] = []; let size = 0;
-  while (true) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength; if (size > 5000000) { await reader.cancel(); throw new SyncError(413, '图片不能超过 5 MB'); } chunks.push(next.value); }
-  const bytes = new Uint8Array(size); let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-  return new Response(bytes, { headers: { 'Content-Type':types[extension], 'Cache-Control':'public, max-age=60', 'X-Content-Type-Options':'nosniff' } });
+  // 限量流式转发，兼容已归档的大图，不在 Worker 中缓冲整个文件。
+  const limit = 20 * 1024 * 1024;
+  if (Number(response.headers.get('Content-Length')) > limit) { await response.body?.cancel(); throw new SyncError(413, '图片不能超过 20 MB'); }
+  if (!response.body) throw new SyncError(503, '图片暂时不可用');
+  let size = 0;
+  const stream = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) { size += chunk.byteLength; if (size > limit) { controller.error(new Error('图片超过 20 MB')); return; } controller.enqueue(chunk); },
+  }));
+  return new Response(stream, { headers: { 'Content-Type':types[extension], 'Cache-Control':'public, max-age=60', 'X-Content-Type-Options':'nosniff' } });
 }
 export async function withSyncLock<T>(action: () => Promise<T>): Promise<T> {
   const db = database(), value = JSON.stringify({ owner: crypto.randomUUID(), expires: Date.now() + 300000 });
@@ -60,25 +61,9 @@ async function commitChanges(state: Snapshot, entries: unknown[], message: strin
   return commit.sha;
 }
 async function blob(content: string) { return (await github<{ sha: string }>('/git/blobs', 'POST', { content, encoding: 'utf-8' })).sha; }
-export async function initializePosts() {
-  return withSyncLock(async () => {
-    if (await baseline()) throw new SyncError(409, '文章仓库已初始化，请使用从仓库同步');
-    const state = await snapshot();
-    if (state.entries.some(x => x.type === 'blob' && x.path.startsWith('posts/') && x.path.endsWith('.md'))) throw new SyncError(409, '仓库已有文章，禁止覆盖；请使用从仓库同步恢复索引');
-    const rows = await database().prepare('SELECT * FROM posts ORDER BY id').all();
-    const entries = rows.results.map(row => ({ path: 'posts/' + row.id, mode: '100644', type: 'blob', content: encodePost(row) }));
-    if (!entries.length || entries.length > 1000) throw new SyncError(503, '文章数量不适合一次初始化');
-    const head = await commitChanges(state, entries, 'feat: 迁移博客当前文章到独立分支');
-    const updated = await snapshot();
-    if (updated.head !== head) throw new SyncError(409, '迁移后仓库发生变化，请从仓库同步恢复索引');
-    const map = Object.fromEntries(updated.entries.filter(x => x.type === 'blob' && x.path.startsWith('posts/') && x.path.endsWith('.md')).map(x => [x.path.slice(6), x.sha]));
-    await marker(map).run();
-    return { count: rows.results.length, remaining: 0, commit: head };
-  });
-}
 export async function writePost(row: Record<string, unknown>, remove: boolean, apply: D1PreparedStatement) {
   const map = await baseline();
-  if (!map) throw new SyncError(503, '请先迁移当前文章到仓库，或从已有仓库恢复索引');
+  if (!map) throw new SyncError(503, '请先从仓库同步恢复文章索引');
   const state = await snapshot(), id = String(row.id);
   const current = state.entries.find(x => x.path === 'posts/' + id)?.sha;
   if (current !== map[id]) throw new SyncError(409, '这篇文章已在 GitHub 修改，请先从仓库同步再编辑');
@@ -93,7 +78,7 @@ export async function pullPosts() {
   return withSyncLock(async () => {
     const state = await snapshot(), map = await baseline() ?? {};
     const remote = state.entries.filter(x => x.type === 'blob' && x.path.startsWith('posts/') && x.path.endsWith('.md'));
-    if (!remote.length && !await baseline()) throw new SyncError(409, '仓库尚无文章，请先迁移当前文章，不能从空仓库恢复');
+    if (!remote.length && !await baseline()) throw new SyncError(409, '仓库尚无文章，不能从空仓库恢复');
     const changed = remote.filter(x => map[x.path.slice(6)] !== x.sha), selected = changed.slice(0, 10);
     const statements: D1PreparedStatement[] = [];
     for (const entry of selected) {
@@ -101,7 +86,7 @@ export async function pullPosts() {
       if (raw.encoding !== 'base64') throw new SyncError(503, '仓库文章编码无效');
       const bytes = Uint8Array.from(atob(raw.content.replace(/\s/g, '')), c => c.charCodeAt(0));
       const post = decodePost(entry.path.slice(6), new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-      statements.push(database().prepare('INSERT INTO posts (id,title,category,tags,published_at,content,excerpt,frontmatter,status,version,updated_at) VALUES (?,?,?,?,?,?,?,?,?,1,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,category=excluded.category,tags=excluded.tags,published_at=excluded.published_at,content=excluded.content,excerpt=excluded.excerpt,frontmatter=excluded.frontmatter,status=excluded.status,version=posts.version+1,updated_at=excluded.updated_at').bind(post.id, post.title, post.category, post.tags, post.publishedAt, post.content, post.excerpt, post.frontmatter, post.status, new Date().toISOString()));
+      statements.push(database().prepare('INSERT INTO posts (id,title,category,tags,published_at,content,excerpt,frontmatter,status,version) VALUES (?,?,?,?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET title=excluded.title,category=excluded.category,tags=excluded.tags,published_at=excluded.published_at,content=excluded.content,excerpt=excluded.excerpt,frontmatter=excluded.frontmatter,status=excluded.status,version=posts.version+1').bind(post.id, post.title, post.category, post.tags, post.publishedAt, post.content, post.excerpt, post.frontmatter, post.status));
       map[post.id] = entry.sha;
     }
     const remaining = changed.length - selected.length;
